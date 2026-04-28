@@ -10,5 +10,5 @@ interface IERC6093 is IERC1155 {
     error ERC1155MissingApprovalForAll(address operator, address owner);
     error ERC1155InvalidApprover(address approver);
     error ERC1155InvalidOperator(address operator);
-//    error ERC1155InvalidArrayLength(uint256 idsLength, uint256 valuesLength);
+    error ERC1155InvalidArrayLength(uint256 idsLength, uint256 valuesLength);
 }

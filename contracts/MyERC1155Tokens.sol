@@ -27,10 +27,6 @@ contract MyERC1155Tokens is IERC6093 {
         tokenType3Mint(10000);
     }
 
-    function transferOwnership(address owner_) public onlyOwner {
-        owner = owner_;
-    }    
-
     function isContract(address addr) private view returns (bool) {
         uint256 size;
         assembly {
@@ -88,6 +84,35 @@ contract MyERC1155Tokens is IERC6093 {
         balanceOf[to][id] += value;
 
         emit TransferSingle(msg.sender, from, to, id, value);
+    }
+
+    function safeBatchTransferFrom(address from, address to, uint256[] calldata ids, uint256[] calldata values, bytes calldata data) external {
+        if(from == address(0))
+            revert ERC1155InvalidSender(from);
+
+        if(to == address(0) || to == from || isContract(to)) /* С целью упрощения - запрещаем, помимо прочего, передавать токены контрактам */
+            revert ERC1155InvalidReceiver(to);
+
+        if(from != msg.sender && ! isApprovedForAll[from][msg.sender])
+            revert ERC1155MissingApprovalForAll(msg.sender, from);
+
+        if(ids.length != values.length)
+            revert ERC1155InvalidArrayLength(ids.length, values.length);
+
+        for(uint256 i = 0; i < ids.length; i++) {
+            uint256 balance = balanceOf[from][ids[i]];
+            if(balance < values[i])
+                revert ERC1155InsufficientBalance(from, balance, values[i], ids[i]);
+        }
+
+        for(uint256 i = 0; i < ids.length; i++) {
+            unchecked {
+                balanceOf[from][ids[i]] -= values[i];
+            }
+            balanceOf[to][ids[i]] += values[i];
+        }
+
+        emit TransferBatch(msg.sender, from, to, ids, values);
     }
 
     function setApprovalForAll(address operator, bool approved) external {
