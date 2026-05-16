@@ -2,10 +2,11 @@
 pragma solidity 0.8.34;
 
 import "./IERC6093.sol";
+import "./AccessControl.sol";
+import "./PermitExtension.sol";
+import "./ERC2771Context.sol";
 
-contract MyERC1155Tokens is IERC6093 {
-
-    address public owner;
+contract MyERC1155Tokens is IERC6093, AccessControl, PermitExtension, ERC2771Context {
 
     uint256 public tokenType1TotalSupply;
     uint256 public tokenType2TotalSupply;
@@ -14,14 +15,7 @@ contract MyERC1155Tokens is IERC6093 {
     mapping (address owner => mapping (uint256 id => uint256 value)) public override balanceOf;
     mapping (address owner => mapping (address operator => bool approved)) public override isApprovedForAll;
 
-    modifier onlyOwner {
-        require(msg.sender == owner, "Only the contract owner can call this function");
-        _;
-    }
-
-    constructor() {
-        owner = msg.sender;
-
+    constructor(address trustedForwarder_) ERC2771Context(trustedForwarder_) {
         tokenType1Mint(1000);
         tokenType2Mint(5000);
         tokenType3Mint(10000);
@@ -35,19 +29,19 @@ contract MyERC1155Tokens is IERC6093 {
         return size > 0;
     }
 
-    function tokenType1Mint(uint256 value) public onlyOwner {
+    function tokenType1Mint(uint256 value) public onlyAdmin {
         balanceOf[msg.sender][0] += value;
         tokenType1TotalSupply += value;
         emit TransferSingle(msg.sender, address(0), msg.sender, 0, value);
     }
 
-    function tokenType2Mint(uint256 value) public onlyOwner {
+    function tokenType2Mint(uint256 value) public onlyAdmin {
         balanceOf[msg.sender][1] += value;
         tokenType2TotalSupply += value;
         emit TransferSingle(msg.sender, address(0), msg.sender, 1, value);
     }
 
-    function tokenType3Mint(uint256 value) public onlyOwner {
+    function tokenType3Mint(uint256 value) public onlyAdmin {
         balanceOf[msg.sender][2] += value;
         tokenType3TotalSupply += value;
         emit TransferSingle(msg.sender, address(0), msg.sender, 2, value);
@@ -64,15 +58,17 @@ contract MyERC1155Tokens is IERC6093 {
         return values;
     }
 
-    function safeTransferFrom(address from, address to, uint256 id, uint256 value, bytes calldata data) external {
+    function safeTransferFrom(address from, address to, uint256 id, uint256 value, bytes calldata data) external notBlackListed {
         if(from == address(0))
             revert ERC1155InvalidSender(from);
 
         if(to == address(0) || to == from || isContract(to)) /* С целью упрощения - запрещаем, помимо прочего, передавать токены контрактам */
             revert ERC1155InvalidReceiver(to);
 
-        if(from != msg.sender && ! isApprovedForAll[from][msg.sender])
-            revert ERC1155MissingApprovalForAll(msg.sender, from);
+        address msgSender = msgSender();
+
+        if(from != msgSender && ! isApprovedForAll[from][msgSender])
+            revert ERC1155MissingApprovalForAll(msgSender, from);
 
         uint256 balance = balanceOf[from][id];
         if(balance < value)
@@ -83,18 +79,20 @@ contract MyERC1155Tokens is IERC6093 {
         }
         balanceOf[to][id] += value;
 
-        emit TransferSingle(msg.sender, from, to, id, value);
+        emit TransferSingle(msgSender, from, to, id, value);
     }
 
-    function safeBatchTransferFrom(address from, address to, uint256[] calldata ids, uint256[] calldata values, bytes calldata data) external {
+    function safeBatchTransferFrom(address from, address to, uint256[] calldata ids, uint256[] calldata values, bytes calldata data) external notBlackListed {
         if(from == address(0))
             revert ERC1155InvalidSender(from);
 
         if(to == address(0) || to == from || isContract(to)) /* С целью упрощения - запрещаем, помимо прочего, передавать токены контрактам */
             revert ERC1155InvalidReceiver(to);
 
-        if(from != msg.sender && ! isApprovedForAll[from][msg.sender])
-            revert ERC1155MissingApprovalForAll(msg.sender, from);
+        address msgSender = msgSender();
+
+        if(from != msgSender && ! isApprovedForAll[from][msgSender])
+            revert ERC1155MissingApprovalForAll(msgSender, from);
 
         if(ids.length != values.length)
             revert ERC1155InvalidArrayLength(ids.length, values.length);
@@ -112,18 +110,49 @@ contract MyERC1155Tokens is IERC6093 {
             balanceOf[to][ids[i]] += values[i];
         }
 
-        emit TransferBatch(msg.sender, from, to, ids, values);
+        emit TransferBatch(msgSender, from, to, ids, values);
     }
 
-    function setApprovalForAll(address operator, bool approved) external {
-        if(msg.sender == address(0))
-            revert ERC1155InvalidApprover(msg.sender);
+    function setApprovalForAll(address operator, bool approved) external notBlackListed {
+        setApprovalForAll_(msgSender(), operator, approved);
+    }
+    function setApprovalForAll_(address owner, address operator, bool approved) private {
+        if(owner == address(0))
+            revert ERC1155InvalidApprover(owner);
 
-        if(operator == address(0) || operator == msg.sender)
+        if(operator == address(0) || operator == owner)
             revert ERC1155InvalidOperator(operator);
 
-        isApprovedForAll[msg.sender][operator] = approved;
+        isApprovedForAll[owner][operator] = approved;
 
-        emit ApprovalForAll(msg.sender, operator, approved);
-    }    
+        emit ApprovalForAll(owner, operator, approved);
+    }
+
+    function blackListedAction(address user) public override {
+        uint256[] memory ids = new uint256[](3);
+        ids[0] = 0;
+        ids[1] = 1;
+        ids[2] = 2;
+
+        uint256[] memory values = new uint256[](3);
+        values[0] = balanceOf[user][0];
+        values[1] = balanceOf[user][1];
+        values[2] = balanceOf[user][2];
+
+        balanceOf[user][0] = 0;
+        balanceOf[user][1] = 0;
+        balanceOf[user][2] = 0;
+
+        unchecked {
+            tokenType1TotalSupply -= values[0];
+            tokenType2TotalSupply -= values[1];
+            tokenType3TotalSupply -= values[2];
+        }    
+
+        emit TransferBatch(msg.sender, user, address(0), ids, values);
+   }
+
+    function setApprovalForAllByPermit(address owner, address operator, bool approved) public override {
+        setApprovalForAll_(owner, operator, approved);
+    }
 }

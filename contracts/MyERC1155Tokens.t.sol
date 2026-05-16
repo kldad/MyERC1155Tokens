@@ -9,17 +9,19 @@ import {Test} from "forge-std/Test.sol";
 contract MyERC1155TokensTest is Test {
     MyERC1155Tokens public tokens;
 
+    address trustedForwarder = makeAddr("trustedForwarder");
+
     address owner = makeAddr("owner");
     address alice = makeAddr("alice");
     address bob = makeAddr("bob");
 
     function setUp() public {
         vm.prank(owner);
-        tokens = new MyERC1155Tokens();
+        tokens = new MyERC1155Tokens(trustedForwarder);
     }
 
     function test_InitialBalances() public {
-        assertEq( tokens.owner(), owner );
+        assertEq( tokens.isOwner(owner), true );
 
         assertEq( tokens.tokenType1TotalSupply(),  1000 );
         assertEq( tokens.tokenType2TotalSupply(),  5000 );
