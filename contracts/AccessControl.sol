@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.34;
 
-contract AccessControl {
-    address private immutable owner;
+import "./ERC2771Context.sol";
+
+contract AccessControl is ERC2771Context {
+    address private _owner;
     mapping (address user => bool isAdmin) private admins;
     mapping (address user => bool isModerator) private moderators;
     mapping (address user => bool isBlackListed) private blackList;
@@ -17,93 +19,105 @@ contract AccessControl {
 
     event AccessControlAdminRoleRemoved(address indexed sender, address indexed user);
     event AccessControlModeratorRoleRemoved(address indexed sender, address indexed user);
-    event AccessControlUserRemovedFromBlackList(address indexed sender, address indexed user);
+//    event AccessControlUserRemovedFromBlackList(address indexed sender, address indexed user);
 
     modifier onlyOwner {
-        require(msg.sender == owner, "Only contract owner can call this function");
+        require(msgSender() == _owner, "Only contract owner can call this function");
         _;
     }
     modifier onlyAdmin {
-        require(msg.sender == owner || admins[msg.sender], "Only admin can call this function");
+        address msgSender = msgSender();
+        require(msgSender == _owner || admins[msgSender], "Only admin can call this function");
         _;
     }
     modifier onlyModerator {
-        require(msg.sender == owner || admins[msg.sender] || moderators[msg.sender], "Only moderator can call this function");
+        address msgSender = msgSender();
+        require(msgSender == _owner || admins[msgSender] || moderators[msgSender], "Only moderator can call this function");
         _;
     }
     modifier notBlackListed {
-        require(!blackList[msg.sender], "Access denied");
+        require(!blackList[msgSender()], "Access denied");
         _;
     }
 
-    constructor() {
-        owner = msg.sender;
+    function __AccessControl_init(address initialOwner) internal {
+        _owner = initialOwner;
     }
 
     function isOwner(address user) public view returns (bool) {
-        return user == owner;
+        return user == _owner;
     }
     function isAdmin(address user) public view returns (bool) {
-        return user == owner || admins[user];
+        return user == _owner || admins[user];
     }
     function isModerator(address user) public view returns (bool) {
-        return user == owner || admins[user] || moderators[user];
+        return user == _owner || admins[user] || moderators[user];
     }
     function isBlackListed(address user) public view returns (bool) {
         return blackList[user];
     }
 
     function addAdmin(address user) public onlyOwner {
-        if(user == address(0) || user == msg.sender || admins[user]) 
-            revert AccessControlInvalidUser(msg.sender, user);
+        address msgSender = msgSender();
+
+        if(user == address(0) || user == msgSender || admins[user]) 
+            revert AccessControlInvalidUser(msgSender, user);
 
         if(blackList[user])
-            revert AccessControlRoleAssignmentUnavailableForBlackListed(msg.sender, user);
+            revert AccessControlRoleAssignmentUnavailableForBlackListed(msgSender, user);
 
         moderators[user] = false;
         admins[user] = true;
 
-        emit AccessControlAdminRoleAssigned(msg.sender, user);
+        emit AccessControlAdminRoleAssigned(msgSender, user);
     }
     function removeAdmin(address user) public onlyOwner {
+        address msgSender = msgSender();
+
         if(!admins[user]) 
-            revert AccessControlInvalidUser(msg.sender, user);
+            revert AccessControlInvalidUser(msgSender, user);
 
         admins[user] = false;
 
-        emit AccessControlAdminRoleRemoved(msg.sender, user);
+        emit AccessControlAdminRoleRemoved(msgSender, user);
     }
 
     function addModerator(address user) public onlyAdmin {
-        if(user == address(0) || user == msg.sender || moderators[user]) 
-            revert AccessControlInvalidUser(msg.sender, user);
+        address msgSender = msgSender();
 
-        if(user == owner) 
-            revert AccessControlRoleAssignmentUnavailableForContractOwner(msg.sender, user);
+        if(user == address(0) || user == msgSender || moderators[user]) 
+            revert AccessControlInvalidUser(msgSender, user);
+
+        if(user == _owner) 
+            revert AccessControlRoleAssignmentUnavailableForContractOwner(msgSender, user);
 
         if(blackList[user])
-            revert AccessControlRoleAssignmentUnavailableForBlackListed(msg.sender, user);
+            revert AccessControlRoleAssignmentUnavailableForBlackListed(msgSender, user);
 
         admins[user] = false;
         moderators[user] = true;
 
-        emit AccessControlModeratorRoleAssigned(msg.sender, user);
+        emit AccessControlModeratorRoleAssigned(msgSender, user);
     }
     function removeModerator(address user) public onlyAdmin {
+        address msgSender = msgSender();
+
         if(!moderators[user]) 
-            revert AccessControlInvalidUser(msg.sender, user);
+            revert AccessControlInvalidUser(msgSender, user);
 
         moderators[user] = false;
 
-        emit AccessControlModeratorRoleRemoved(msg.sender, user);
+        emit AccessControlModeratorRoleRemoved(msgSender, user);
     }
 
     function addToBlackList(address user) public onlyModerator {
-        if(user == address(0) || user == msg.sender || blackList[user]) 
-            revert AccessControlInvalidUser(msg.sender, user);
+        address msgSender = msgSender();
 
-        if(user == owner) 
-            revert AccessControlRoleAssignmentUnavailableForContractOwner(msg.sender, user);
+        if(user == address(0) || user == msgSender || blackList[user]) 
+            revert AccessControlInvalidUser(msgSender, user);
+
+        if(user == _owner) 
+            revert AccessControlRoleAssignmentUnavailableForContractOwner(msgSender, user);
 
         admins[user] = false;
         moderators[user] = false;
@@ -112,8 +126,8 @@ contract AccessControl {
 
         blackList[user] = true;
 
-        emit AccessControlUserBlackListed(msg.sender, user);
+        emit AccessControlUserBlackListed(msgSender, user);
     }
 
     function blackListedAction(address user) public virtual {}
-}    
+}

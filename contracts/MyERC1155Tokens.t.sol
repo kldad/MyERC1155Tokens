@@ -2,6 +2,7 @@
 pragma solidity 0.8.34;
 
 import {MyERC1155Tokens} from "./MyERC1155Tokens.sol";
+import {ERC1967Proxy} from "./ERC1967Proxy.sol";
 import {IERC1155} from "./IERC1155.sol";
 import {IERC6093} from "./IERC6093.sol";
 import {Test} from "forge-std/Test.sol";
@@ -16,8 +17,11 @@ contract MyERC1155TokensTest is Test {
     address bob = makeAddr("bob");
 
     function setUp() public {
+        MyERC1155Tokens impl = new MyERC1155Tokens();
+        bytes memory initData = abi.encodeCall(MyERC1155Tokens.initialize, (trustedForwarder));
         vm.prank(owner);
-        tokens = new MyERC1155Tokens(trustedForwarder);
+        ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
+        tokens = MyERC1155Tokens(address(proxy));
     }
 
     function test_InitialBalances() public {

@@ -11,8 +11,23 @@ describe("MyERC1155Tokens", async function () {
     const walletClients = await viem.getWalletClients();
     const [owner, alice, bob, trustedForwarder] = walletClients;  
 
+    async function deployTokensProxy(forwarderAddress: `0x${string}`, deployer = owner) {
+        const impl = await viem.deployContract("MyERC1155Tokens");
+        const initData = encodeFunctionData({
+            abi: impl.abi,
+            functionName: "initialize",
+            args: [forwarderAddress],
+        });
+        const proxy = await viem.deployContract(
+            "ERC1967Proxy",
+            [impl.address, initData],
+//            { account: deployer.account },
+        );
+        return viem.getContractAt("MyERC1155Tokens", proxy.address);
+    }
+
     it("Should call setApprovalForAll By Permit ", async function () {
-        const tokens = await viem.deployContract("MyERC1155Tokens", [trustedForwarder.account.address]);
+        const tokens = await deployTokensProxy(trustedForwarder.account.address);
 
         let nonce = await tokens.read.nonces([alice.account.address]);
 
@@ -59,13 +74,16 @@ describe("MyERC1155Tokens", async function () {
             `0x${signature.slice(2, 66)}`, 
             `0x${signature.slice(66, 130)}`
         ]);
+
+        assert.equal(
+            await tokens.read.isApprovedForAll([alice.account.address, bob.account.address]),
+            true,
+        );
     });
 
     it("Should safeTransferFrom via ERC-2771 meta-transaction", async function () {
         const forwarder = await viem.deployContract("ERC2771TrustedForwarder");
-        const tokens = await viem.deployContract("MyERC1155Tokens", [
-            forwarder.address,
-        ]);
+        const tokens = await deployTokensProxy(forwarder.address);
 
         const transferAmount = 100n;
         const tokenId = 0n;

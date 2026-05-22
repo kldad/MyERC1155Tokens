@@ -2,11 +2,11 @@
 pragma solidity 0.8.34;
 
 import "./IERC6093.sol";
-import "./AccessControl.sol";
 import "./PermitExtension.sol";
-import "./ERC2771Context.sol";
+import "./Initializable.sol";
+import "./UUPSUpgradeable.sol";
 
-contract MyERC1155Tokens is IERC6093, AccessControl, PermitExtension, ERC2771Context {
+contract MyERC1155Tokens is IERC6093, Initializable, PermitExtension, UUPSUpgradeable {
 
     uint256 public tokenType1TotalSupply;
     uint256 public tokenType2TotalSupply;
@@ -15,11 +15,26 @@ contract MyERC1155Tokens is IERC6093, AccessControl, PermitExtension, ERC2771Con
     mapping (address owner => mapping (uint256 id => uint256 value)) public override balanceOf;
     mapping (address owner => mapping (address operator => bool approved)) public override isApprovedForAll;
 
-    constructor(address trustedForwarder_) ERC2771Context(trustedForwarder_) {
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address trustedForwarder_) public initializer {
+        __AccessControl_init(msg.sender);
+        __PermitExtension_init();
+        __ERC2771Context_init(trustedForwarder_);
+
         tokenType1Mint(1000);
         tokenType2Mint(5000);
         tokenType3Mint(10000);
     }
+
+    function version() public pure virtual returns (uint256) {
+        return 1;
+    }
+
+    function _authorizeUpgrade(address) internal view override onlyOwner {}
 
     function isContract(address addr) private view returns (bool) {
         uint256 size;
@@ -30,21 +45,24 @@ contract MyERC1155Tokens is IERC6093, AccessControl, PermitExtension, ERC2771Con
     }
 
     function tokenType1Mint(uint256 value) public onlyAdmin {
-        balanceOf[msg.sender][0] += value;
+        address msgSender = msgSender();
+        balanceOf[msgSender][0] += value;
         tokenType1TotalSupply += value;
-        emit TransferSingle(msg.sender, address(0), msg.sender, 0, value);
+        emit TransferSingle(msgSender, address(0), msgSender, 0, value);
     }
 
     function tokenType2Mint(uint256 value) public onlyAdmin {
-        balanceOf[msg.sender][1] += value;
+        address msgSender = msgSender();
+        balanceOf[msgSender][1] += value;
         tokenType2TotalSupply += value;
-        emit TransferSingle(msg.sender, address(0), msg.sender, 1, value);
+        emit TransferSingle(msgSender, address(0), msgSender, 1, value);
     }
 
     function tokenType3Mint(uint256 value) public onlyAdmin {
-        balanceOf[msg.sender][2] += value;
+        address msgSender = msgSender();
+        balanceOf[msgSender][2] += value;
         tokenType3TotalSupply += value;
-        emit TransferSingle(msg.sender, address(0), msg.sender, 2, value);
+        emit TransferSingle(msgSender, address(0), msgSender, 2, value);
     }
 
     function balanceOfBatch(address[] calldata owners, uint256[] calldata ids) external view returns (uint256[] memory) {
@@ -59,10 +77,10 @@ contract MyERC1155Tokens is IERC6093, AccessControl, PermitExtension, ERC2771Con
     }
 
     function safeTransferFrom(address from, address to, uint256 id, uint256 value, bytes calldata data) external notBlackListed {
-        if(from == address(0))
+        if(from == address(0) || isBlackListed(from))
             revert ERC1155InvalidSender(from);
 
-        if(to == address(0) || to == from || isContract(to)) /* С целью упрощения - запрещаем, помимо прочего, передавать токены контрактам */
+        if(to == address(0) || isBlackListed(to) || to == from || isContract(to)) /* С целью упрощения - запрещаем, помимо прочего, передавать токены контрактам */
             revert ERC1155InvalidReceiver(to);
 
         address msgSender = msgSender();
@@ -83,10 +101,10 @@ contract MyERC1155Tokens is IERC6093, AccessControl, PermitExtension, ERC2771Con
     }
 
     function safeBatchTransferFrom(address from, address to, uint256[] calldata ids, uint256[] calldata values, bytes calldata data) external notBlackListed {
-        if(from == address(0))
+        if(from == address(0) || isBlackListed(from))
             revert ERC1155InvalidSender(from);
 
-        if(to == address(0) || to == from || isContract(to)) /* С целью упрощения - запрещаем, помимо прочего, передавать токены контрактам */
+        if(to == address(0) || isBlackListed(to) || to == from || isContract(to)) /* С целью упрощения - запрещаем, помимо прочего, передавать токены контрактам */
             revert ERC1155InvalidReceiver(to);
 
         address msgSender = msgSender();
@@ -120,7 +138,7 @@ contract MyERC1155Tokens is IERC6093, AccessControl, PermitExtension, ERC2771Con
         if(owner == address(0))
             revert ERC1155InvalidApprover(owner);
 
-        if(operator == address(0) || operator == owner)
+        if(operator == address(0) || isBlackListed(operator) || operator == owner)
             revert ERC1155InvalidOperator(operator);
 
         isApprovedForAll[owner][operator] = approved;
@@ -149,10 +167,10 @@ contract MyERC1155Tokens is IERC6093, AccessControl, PermitExtension, ERC2771Con
             tokenType3TotalSupply -= values[2];
         }    
 
-        emit TransferBatch(msg.sender, user, address(0), ids, values);
+        emit TransferBatch(msgSender(), user, address(0), ids, values);
    }
 
-    function setApprovalForAllByPermit(address owner, address operator, bool approved) public override {
+    function setApprovalForAllByPermit(address owner, address operator, bool approved) internal override {
         setApprovalForAll_(owner, operator, approved);
     }
 }

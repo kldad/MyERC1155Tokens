@@ -6,6 +6,10 @@ import {Test} from "forge-std/Test.sol";
 
 /// @dev Изолированная оболочка: фиксирует вызов `blackListedAction` и даёт точку входа для `notBlackListed`.
 contract AccessControlHarness is AccessControl {
+    function init(address initialOwner) external {
+        __AccessControl_init(initialOwner);
+    }
+
     address public lastBlacklistedUser;
     uint256 public blacklistedActionCount;
 
@@ -35,8 +39,9 @@ contract AccessControlTest is Test {
         bob = makeAddr("bob");
         carol = makeAddr("carol");
 
-        vm.prank(owner);
         ac = new AccessControlHarness();
+        vm.prank(owner);
+        ac.init(owner);
     }
 
     /* ---------- начальное состояние ---------- */
